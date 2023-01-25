@@ -6,7 +6,7 @@ class Model(nn.Module):
         self.args = args
 
         self.embedding = nn.Embedding(
-            num_embeddings=n_vocab,
+            num_embeddings=n_vocab+1,
             embedding_dim=args["EMB_DIM"],
         )
         self.lstm = nn.LSTM(
@@ -15,16 +15,10 @@ class Model(nn.Module):
             num_layers=self.args["NUM_LAYERS"],
             batch_first = True
         )
-        self.fc = nn.Linear(args["N_HIDDEN"], n_vocab)
+        self.fc = nn.Linear(args["N_HIDDEN"], n_vocab+1)
 
-    def forward(self, x):
-        embed = self.embedding(x)
-        # state_h = hidden[0].repeat(1,self.args["BATCH_SIZE"],1)
-        # state_c = hidden[1].repeat(1,self.args["BATCH_SIZE"],1)
+    def forward(self, x,y=None):
+        embed = self.embedding(x) 
         output,_ = self.lstm(embed)
         logits = self.fc(output)
         return logits
-
-    def init_state(self):
-        return (torch.zeros(self.args["NUM_LAYERS"], 1, self.args["N_HIDDEN"],device='cuda'),
-                torch.zeros(self.args["NUM_LAYERS"], 1, self.args["N_HIDDEN"],device="cuda"))
