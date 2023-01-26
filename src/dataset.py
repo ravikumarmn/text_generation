@@ -26,17 +26,6 @@ class CustomDataset(torch.utils.data.Dataset):
                 dataset.append((inp,lbl))
             self.data = dataset
 
-    # def load_words(self):
-    #     with open(self.params["DATA_DIR"]+ "ins_outs.txt","r") as file:
-    #         data =file.read().replace("\n"," ").split()
-    #     return data
-        
-
-    # def get_unique_words(self,words):
-    #     word_counts = Counter(words)
-    #     sorted_word = sorted(word_counts,key=word_counts.get,reverse=True)
-    #     return sorted_word
-
     def __len__(self):
         return len(self.data)
         
