@@ -4,18 +4,51 @@ import json
 import re
 import pandas as pd
 from pathlib import Path
-from utils import plot_word_counts,shift_word
+from utils import get_tokenizer, plot_word_counts,shift_word,split_method
+from spacy.lang.en import English
 
 
-class PrepareData():
+def save_vocab(unique_words,save_dir,special_char = None):
+    unique_words  = sorted(set(unique_words))
+
+    n_to_char = {n:char for n, char in enumerate(unique_words)}
+    char_to_n = {char:n for n, char in n_to_char.items()}
+
+    vocab_size =  len(n_to_char)
+
+    vocabed = {
+        "word2index":char_to_n,
+        "index2word":n_to_char,
+        "vocab_len" : vocab_size,
+        "special_charcters":special_char
+    }
+    json_obj = json.dumps(vocabed)
+    with open(save_dir+"vocab.json", "w") as outfile:
+        outfile.write(json_obj)
+    return f"vocab created to {save_dir+'vocab.json'}"
+
+def spacy_create_vocab(raw_data,save_dir,tokenizer):
+    all_tokens = split_method(raw_data,tokenizer)
+    save_vocab(all_tokens,save_dir)
+
+
+def custom_create_vocab(raw_data,save_dir):
+    special_char = list(set(re.findall("[^a-zA-Z0-9]",raw_data)))
+    all_tokens = raw_data.split() + special_char 
+    save_vocab(all_tokens,save_dir,special_char)
+
+class PrepareData:
     def __init__(self, params):
         self.params = params
         vocab_data = json.load(open(params['DATA_DIR']+"vocab.json","r"))
         self.word2index = vocab_data['word2index']
         self.index2word = vocab_data['index2word']
+        tokenizer_type = self.params.get('TOKENIZER_TYPE','custom')
+        
+        self.tokenizer = get_tokenizer(tokenizer_type)
 
     def encode(self,sentence):
-        return [self.word2index[word] for word in sentence.split()]
+        return [self.word2index[word] for word in split_method(sentence,self.tokenizer)]
 
     def decode(self,sequence):
         return [self.index2word[word] for word in sequence]
@@ -40,31 +73,11 @@ class PrepareData():
         train_sequences = list()
         val_sequences = list()
         for t_sen,v_sen in zip(train_sentences,val_sentences):
+
             train_sequences.append(self.encode(t_sen))
             val_sequences.append(self.encode(v_sen))
         return train_sequences,val_sequences
 
-def create_vocab(raw_data,save_dir):
-    special_char = list(set(re.findall("[^a-zA-Z0-9]",raw_data)))
-    all_words = raw_data.split() + special_char 
-
-    unique_words  = sorted(list(set(all_words)))
-
-    n_to_char = {n:char for n, char in enumerate(unique_words)}
-    char_to_n = {char:n for n, char in n_to_char.items()}
-
-    vocab_size =  len(n_to_char)
-
-    vocabed = {
-        "word2index":char_to_n,
-        "index2word":n_to_char,
-        "vocab_len" : vocab_size,
-        "special_charcters":special_char
-    }
-    json_obj = json.dumps(vocabed)
-    with open(save_dir+"vocab.json", "w") as outfile:
-        outfile.write(json_obj)
-    return f"vocab created to {save_dir+'vocab.json'}"
 
 def create_inputs_outputs(params):
     prepare_data = PrepareData(params)
@@ -85,26 +98,30 @@ def create_inputs_outputs(params):
         }
     }
     torch.save(data,params["DATA_DIR"]+"ins_outs.pt")
-    # json_obj = json.dumps(data)
-    # with open(save_dir + "ins_outs.json", "w") as outfile:
-    #     outfile.write(json_obj)
     print("Train & Validation Data prepared.")
 
 def create_data(args):
     # Read csv data
     df = pd.read_csv(args['DEFAULT_FILE_NAME'])
     raw_data =  " ".join(df["Joke"]) # use print for text in debug mode
+    sentences = df['Joke'].tolist()
 
-    # creating vocab
+    tokenizer_type = args.get('TOKENIZER_TYPE','custom')
+    tokenizer = get_tokenizer(tokenizer_type)
+
+    if tokenizer_type =='custom':
+        custom_create_vocab(raw_data,args["DATA_DIR"])
+
+    elif tokenizer_type =='spacy':
+        spacy_create_vocab(raw_data,args["DATA_DIR"],tokenizer)
+    else:
+        raise NotImplementedError
     
+    max_words = plot_word_counts(sentences,tokenizer)
+    trim_size = int(input("ENTER TRIM SIZE:"))
+    df['trim_flag'] = df['Joke'].apply(lambda x : \
+        len(split_method(x,tokenizer))>=trim_size)
 
-    create_vocab(raw_data,args["DATA_DIR"])
-
-    max_words = max([len(j) for j in df['Joke'].str.split()])
-    args['max_words'] = max_words
-    plot_word_counts(df['Joke'])
-    df['trim_flag'] = df['Joke'].apply(lambda x : len(x.split())>=args['TRIM_SIZE'] )
-    # valid_joke = df[df['trim_flag']]
     valid_joke = df.loc[df['trim_flag'],"Joke"]
     
     sentences = valid_joke.tolist()
@@ -118,6 +135,7 @@ def create_data(args):
             },
             "metadata":{
                 "max_words" :max_words,
+                "trim_size" : trim_size
             }
         },file
     )
